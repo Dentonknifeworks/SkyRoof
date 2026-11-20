@@ -34,7 +34,6 @@ namespace SkyRoof
     private List<ListViewItem> Items = new();
 
     private readonly Font BoldFont;
-    private readonly Pen PathPen = new Pen(Theme.Now, 2);
 
     public QsoSchedulerPanel()
     {
@@ -293,38 +292,13 @@ namespace SkyRoof
       e.Graphics.DrawString(text, BoldFont, brush, rect);
 
       // two mini sky-views, side by side: me on left, dx on right
-      DrawMiniSkyView(e.Graphics, new RectangleF(e.Bounds.X + w, e.Bounds.Y, h, h), overlap.MyMiniPath);
-      DrawMiniSkyView(e.Graphics, new RectangleF(e.Bounds.X + w + h, e.Bounds.Y, h, h), overlap.DxMiniPath);
+      SatellitePass.DrawMiniSkyView(e.Graphics, new RectangleF(e.Bounds.X + w, e.Bounds.Y, h, h), overlap.MyMiniPath);
+      SatellitePass.DrawMiniSkyView(e.Graphics, new RectangleF(e.Bounds.X + w + h, e.Bounds.Y, h, h), overlap.DxMiniPath);
 
       // item separator
       var sep = new RectangleF(e.Bounds.X, e.Bounds.Y + h, e.Bounds.Width, 1);
       e.Graphics.FillRectangle(SystemBrushes.ControlDark, sep);
     }
 
-    private void DrawMiniSkyView(Graphics g, RectangleF rect, PointF[] path)
-    {
-      rect.Inflate(-5, -5);
-      var radius = rect.Width / 2;
-      var center = new PointF(rect.Left + radius, rect.Top + radius);
-
-      // grid: horizon, 45° ring, cross hairs
-      g.DrawEllipse(Pens.Silver, rect); // fixed: mini sky view grid, silver in both themes
-      g.DrawLine(Pens.Silver, rect.Left, center.Y, rect.Right, center.Y); // fixed: grid
-      g.DrawLine(Pens.Silver, center.X, rect.Top, center.X, rect.Bottom); // fixed: grid
-      var inner = rect;
-      inner.Inflate(-radius / 2, -radius / 2);
-      g.DrawEllipse(Pens.Silver, inner); // fixed: grid
-
-      if (path != null && path.Length > 1)
-      {
-        var points = path.Select(p =>
-          new PointF(center.X + p.X * radius, center.Y - p.Y * radius)).ToArray();
-        g.DrawLines(PathPen, points);
-
-        // green start, red end
-        g.FillEllipse(Theme.NowBrush, points.First().X - 3, points.First().Y - 3, 6, 6);
-        g.FillEllipse(Brushes.Red, points.Last().X - 3, points.Last().Y - 3, 6, 6);
-      }
-    }
   }
 }

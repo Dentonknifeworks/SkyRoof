@@ -16,7 +16,6 @@ namespace SkyRoof
     private ListViewItem? HoveredItem;
 
     private readonly Font BoldFont;
-    private readonly Pen PathPen = new Pen(Theme.Now, 2);
     private SatnogsDbSatellite? ContextMenuSat;
 
 
@@ -272,35 +271,8 @@ namespace SkyRoof
 
 
       // mini sky view
-
-      // background
       rect = new RectangleF(e.Bounds.X + w, e.Bounds.Y, h, h);
-      //e.Graphics.FillRectangle(Brushes.Aquamarine, rect);      
-      rect.Inflate(-5, -5);
-      //e.Graphics.FillEllipse(Brushes.White, rect);
-
-      var radius = rect.Width / 2;
-      var center = new PointF(rect.Left + radius, rect.Top + radius);
-
-      // grid
-      e.Graphics.DrawEllipse(Pens.Silver, rect); // fixed: mini sky view grid, silver in both themes
-      e.Graphics.DrawLine(Pens.Silver, rect.Left, center.Y, rect.Right, center.Y); // fixed: grid
-      e.Graphics.DrawLine(Pens.Silver, center.X, rect.Top, center.X, rect.Bottom); // fixed: grid
-      rect.Inflate(-radius / 2, -radius / 2);
-      e.Graphics.DrawEllipse(Pens.Silver, rect); // fixed: mini sky view grid, silver in both themes
-
-      var path = ((SatellitePass)e.Item.Tag).MiniPath;
-      if (path.Length > 1)
-      {
-        // path
-        var points = path.Select(p =>
-          new PointF(center.X + p.X * radius, center.Y - p.Y * radius)).ToArray();
-        e.Graphics.DrawLines(PathPen, points);
-
-        // end points
-        e.Graphics.FillEllipse(Theme.NowBrush, points.First().X - 3, points.First().Y - 3, 6, 6);
-        e.Graphics.FillEllipse(Brushes.Red, points.Last().X - 3, points.Last().Y - 3, 6, 6);
-      }
+      pass.DrawMiniSkyView(e.Graphics, rect);
 
       // item separator
       rect = new RectangleF(e.Bounds.X, e.Bounds.Y + h, e.Bounds.Width, 1);

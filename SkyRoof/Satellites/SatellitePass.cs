@@ -179,6 +179,39 @@ namespace SkyRoof
       }
     }
 
+    /// <summary>The polar mini sky-view used on a Satellite Passes row: horizon, 45° ring,
+    /// N-S/E-W cross, path, green AOS, red LOS.</summary>
+    public void DrawMiniSkyView(Graphics g, RectangleF rect)
+    {
+      MakeMiniPath();
+      DrawMiniSkyView(g, rect, MiniPath);
+    }
+
+    public static void DrawMiniSkyView(Graphics g, RectangleF rect, PointF[]? path)
+    {
+      rect.Inflate(-5, -5);
+      var radius = rect.Width / 2;
+      var center = new PointF(rect.Left + radius, rect.Top + radius);
+
+      g.DrawEllipse(Pens.Silver, rect);
+      g.DrawLine(Pens.Silver, rect.Left, center.Y, rect.Right, center.Y);
+      g.DrawLine(Pens.Silver, center.X, rect.Top, center.X, rect.Bottom);
+      var inner = rect;
+      inner.Inflate(-radius / 2, -radius / 2);
+      g.DrawEllipse(Pens.Silver, inner);
+
+      if (path == null || path.Length <= 1) return;
+
+      var points = new PointF[path.Length];
+      for (int i = 0; i < path.Length; i++)
+        points[i] = new PointF(center.X + path[i].X * radius, center.Y - path[i].Y * radius);
+
+      using var pathPen = new Pen(Theme.Now, 2);
+      g.DrawLines(pathPen, points);
+      g.FillEllipse(Theme.NowBrush, points[0].X - 3, points[0].Y - 3, 6, 6);
+      g.FillEllipse(Brushes.Red, points[^1].X - 3, points[^1].Y - 3, 6, 6);
+    }
+
     // boundary polygon of the area covered by the satellite during this pass, as absolute geo points
     public List<GeoPoint> GetCoveragePolygon()
     {

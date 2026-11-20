@@ -1,3 +1,4 @@
+using System.Drawing.Drawing2D;
 using Serilog;
 using WeifenLuo.WinFormsUI.Docking;
 using VE3NEA;
@@ -20,8 +21,12 @@ namespace SkyRoof
     private readonly Label minElValueLabel = new();
     private readonly ToolTip minElToolTip = new();
     private readonly ToolTip listColumnToolTip = new();
+    private readonly MiniSkyPopup skyMapPopup = new();
     private readonly System.Windows.Forms.Timer nextPassTimer = new();
     private readonly System.Windows.Forms.Timer minElSaveTimer = new() { Interval = 400 };
+    private readonly System.Windows.Forms.Timer skyMapTimer = new() { Interval = 400 };
+    private ListViewItem? skyHoverItem;
+    private SatellitePass? skyHoverPass;
     private int? DragSourceIndex;
     private bool refreshingList;
     private bool refreshingPresets;
@@ -65,6 +70,8 @@ namespace SkyRoof
         minElSaveTimer.Stop();
         ctx.Settings.SaveToFile();
       };
+
+      skyMapTimer.Tick += SkyMapTimer_Tick;
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -74,6 +81,10 @@ namespace SkyRoof
       nextPassTimer.Dispose();
       minElSaveTimer.Stop();
       minElSaveTimer.Dispose();
+      skyMapTimer.Stop();
+      skyMapTimer.Dispose();
+      HideSkyMapPopup();
+      skyMapPopup.Dispose();
       minElToolTip.Dispose();
       listColumnToolTip.Dispose();
       ctx.Settings.Ui.SaveColumnWidths("MonitoredSatellitesPanel", listView);
@@ -206,7 +217,7 @@ namespace SkyRoof
       listView.Columns.Add("Rotator", MeasureColumnHeaderWidth(listView, "Rotator"));
       listView.DoubleClick += (s, e) => SelectInApp();
       listView.MouseMove += ListView_MouseMove;
-      listView.MouseLeave += (s, e) => listColumnToolTip.SetToolTip(listView, "");
+      listView.MouseLeave += ListView_MouseLeave;
       listView.MouseDown += ListView_MouseDown;
       listView.ItemDrag += ListView_ItemDrag;
       listView.DragEnter += ListView_DragEnter;
@@ -295,6 +306,7 @@ namespace SkyRoof
     {
       if (IsDisposed) return;
 
+      HideSkyMapPopup();
       nextPassTimer.Stop();
       refreshingList = true;
       listView.BeginUpdate();
@@ -463,9 +475,102 @@ namespace SkyRoof
 
     private void ListView_MouseMove(object? sender, MouseEventArgs e)
     {
+      if (TryHoverSkyMap(e.Location))
+      {
+        if (listColumnToolTip.GetToolTip(listView) != "")
+          listColumnToolTip.SetToolTip(listView, "");
+        return;
+      }
+
+      HideSkyMapPopup();
       string tip = GetColumnToolTip(e.Location);
       if (listColumnToolTip.GetToolTip(listView) != tip)
         listColumnToolTip.SetToolTip(listView, tip);
+    }
+
+    private void ListView_MouseLeave(object? sender, EventArgs e)
+    {
+      HideSkyMapPopup();
+      listColumnToolTip.SetToolTip(listView, "");
+    }
+
+    // true when the pointer is on a Max cell that has a current or next pass to plot
+    private bool TryHoverSkyMap(Point location)
+    {
+      if (IsOverColumnHeader(location)) return false;
+
+      var hit = listView.HitTest(location);
+      if (hit.Item == null || hit.SubItem == null) return false;
+      int col = hit.Item.SubItems.IndexOf(hit.SubItem);
+      if (col != MaxColumnIndex) return false;
+      if (!hit.SubItem.Bounds.Contains(location)) return false;
+      if (hit.Item.Tag is not MonitoredSatelliteEntry entry) return false;
+
+      var pass = PassForEntry(entry);
+      if (pass == null) return false;
+
+      if (skyHoverItem == hit.Item && ReferenceEquals(skyHoverPass, pass))
+      {
+        if (skyMapPopup.Visible) return true;
+        if (!skyMapTimer.Enabled) skyMapTimer.Start();
+        return true;
+      }
+
+      skyHoverItem = hit.Item;
+      skyHoverPass = pass;
+      if (skyMapPopup.Visible)
+        ShowSkyMapPopup(pass, hit.SubItem.Bounds);
+      else
+      {
+        skyMapTimer.Stop();
+        skyMapTimer.Start();
+      }
+      return true;
+    }
+
+    private void SkyMapTimer_Tick(object? sender, EventArgs e)
+    {
+      skyMapTimer.Stop();
+      if (skyHoverItem == null || skyHoverPass == null) return;
+      if (skyHoverItem.ListView != listView) return;
+      ShowSkyMapPopup(skyHoverPass, skyHoverItem.SubItems[MaxColumnIndex].Bounds);
+    }
+
+    private void ShowSkyMapPopup(SatellitePass pass, Rectangle cell)
+    {
+      var size = skyMapPopup.CanvasSize;
+      var screen = listView.PointToScreen(new Point(cell.Right + 4, cell.Top));
+      var area = Screen.FromControl(listView).WorkingArea;
+      if (screen.X + size.Width > area.Right)
+        screen.X = listView.PointToScreen(cell.Location).X - size.Width - 4;
+      if (screen.Y + size.Height > area.Bottom)
+        screen.Y = area.Bottom - size.Height;
+      if (screen.Y < area.Top) screen.Y = area.Top;
+      skyMapPopup.ShowPass(this, pass, screen);
+    }
+
+    private void HideSkyMapPopup()
+    {
+      skyMapTimer.Stop();
+      skyHoverItem = null;
+      skyHoverPass = null;
+      if (skyMapPopup.Visible) skyMapPopup.Hide();
+    }
+
+    private SatellitePass? PassForEntry(MonitoredSatelliteEntry entry)
+    {
+      if (ctx.MonitoredPasses == null) return null;
+      var sat = ctx.SatnogsDb?.GetSatellite(entry.SatelliteId);
+      if (sat == null) return null;
+
+      var now = DateTime.UtcNow;
+      var passes = ctx.MonitoredPasses.GetPassesSnapshot();
+      var active = passes.FirstOrDefault(p => p.Satellite == sat && p.StartTime <= now && p.EndTime > now);
+      if (active != null) return active;
+      return passes
+        .Where(p => p.Satellite == sat && p.StartTime > now)
+        .OrderBy(p => p.StartTime)
+        .FirstOrDefault();
     }
 
     private string GetColumnToolTip(Point location)
@@ -689,6 +794,57 @@ namespace SkyRoof
       if (listView.Items.Count > 0)
         return location.Y < listView.GetItemRect(0).Top;
       return location.Y < TextRenderer.MeasureText("Ag", listView.Font).Height + 8;
+    }
+
+    // tooltip-style popup that does not capture the mouse, so leaving the Max cell still
+    // reaches the list and the plot can close or switch to another row
+    private sealed class MiniSkyPopup : Form
+    {
+      private const int CanvasPixels = 112;
+      private const int WsExNoActivate = 0x08000000;
+      private const int WsExToolWindow = 0x00000080;
+      private const int WsExTransparent = 0x00000020;
+      private SatellitePass? pass;
+
+      public MiniSkyPopup()
+      {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        Size = new Size(CanvasPixels, CanvasPixels);
+        BackColor = Theme.TipBack;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+      }
+
+      public Size CanvasSize => Size;
+
+      protected override bool ShowWithoutActivation => true;
+
+      protected override CreateParams CreateParams
+      {
+        get
+        {
+          var cp = base.CreateParams;
+          cp.ExStyle |= WsExNoActivate | WsExToolWindow | WsExTransparent;
+          return cp;
+        }
+      }
+
+      public void ShowPass(IWin32Window owner, SatellitePass nextPass, Point screenLocation)
+      {
+        pass = nextPass;
+        Location = screenLocation;
+        Invalidate();
+        if (!Visible) Show(owner);
+      }
+
+      protected override void OnPaint(PaintEventArgs e)
+      {
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.Clear(BackColor);
+        ControlPaint.DrawBorder(e.Graphics, ClientRectangle, SystemColors.WindowFrame, ButtonBorderStyle.Solid);
+        pass?.DrawMiniSkyView(e.Graphics, new RectangleF(4, 4, Width - 8, Height - 8));
+      }
     }
   }
 }
